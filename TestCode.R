@@ -21,35 +21,71 @@ library(VBSV)
 library(splines2)
 
 # Example
-set.seed(2022)
+set.seed(2023)
 
-n = 500
+n = 400
 mu = -2
 rho = 0.99
 eta2 = 0.1
 
-# Simulate data without covariates, i.e. beta=NULL
-sim_data = sv_sim(n,mu,rho,eta2,beta=NULL)
+# Simulate data without covariates, i.e. beta=0
+sim_data = sv_sim(n,mu,rho,eta2,beta=0)
 
 y = sim_data$y
 h = sim_data$h
 
-# VB without smoothin (i.e. smooth=FALSE)
-# To approximate with the homoskedastic GMRF set homo=TRUE
-hyper = list(A=0.1,B=0.1,s2=100,s2beta=100)
-mod = VBSV(y,X=NULL,W=NULL,hyper,options=list(homo=FALSE,smooth=FALSE),Trace=1)
+# VB without smoothing
+?VBSV
+mod = VBSV(y)
 
-#: Process parameters
+#: Process parameters and E(y)
 mod$par
+mod$mu_q_beta
 #: Plot volatility (log=TRUE provide h_t, log=FALSE provides sigma^2_t)
 #: Set true_val=NULL to avoid plotting the simulates process
 sv_plot(mod,true_val=h,log=T)
 sv_plot(mod,true_val=h,log=F)
 
+#: Compare with MCMC stochvol algorithm looking at the accuracy measure
+#: which can be seen as the "overlapping density" between MCMC and VB
+library(stochvol)
+mcmc = svsample(y, designmatrix = "ar0",
+                draws = 20000, burnin = 10000, 
+                priorphi = c(1,1), quiet = TRUE)
+
+t = 20
+#: Accuracy for the log-variance
+accVarApp(VBparVec=c(mod$mu_q_h[t+1],mod$sigma2_q_h[t+1]),
+          MCsample=mcmc$latent[[1]][,t],
+          type='Normal',
+          plotDensities=TRUE,
+          parTrue=h[t])
+#: Accuracy for the variance
+accVarApp(VBparVec=c(mod$mu_q_h[t+1],mod$sigma2_q_h[t+1]),
+          MCsample=exp(mcmc$latent[[1]][,t]),
+          type='Lognormal',
+          plotDensities=TRUE,
+          parTrue=exp(h[t]))
+
 #: Predict one step ahead
-hpred = pred_h(1000,mod)
-plot(density(hpred),main="predictive density",xlab=expression(h[t+1]))
-plot(density(exp(hpred)),main="predictive density",xlab=expression(sigma[t+1]^2))
+pred_vb = pred_h(10000,mod)
+h_pred = pred_vb$h
+y_pred = pred_vb$y
+
+mcpred_h = as(predict(mcmc,steps=1)$h[[1]],"vector")
+mcpred_y = as(predict(mcmc,steps=1)$y[[1]],"vector")
+
+#: Evaluate the accuracy of the predictive densities
+#: Log-scale
+accVarApp(VBparVec=y_pred,
+          MCsample=mcpred_y,
+          plotDensities=TRUE)
+#: Variance scale
+accVarApp(VBparVec=exp(h_pred),
+          MCsample=exp(mcpred_h),
+          plotDensities=TRUE)
+
+
 
 #: Include smoothing - set the matrix W
 #: B-spline
@@ -59,7 +95,7 @@ W = bSpline(0:n,
             knots=knots, 
             degree=3, 
             intercept=TRUE)
-mod = VBSV(y,X=NULL,W=W,hyper,options=list(homo=FALSE,smooth=TRUE),Trace=1)
+mod = VBSV(y,W=W)
 
 mod$par
 sv_plot(mod,true_val=h,log=T)
@@ -68,9 +104,8 @@ sv_plot(mod,true_val=h,log=F)
 
 #: Daubechies Wavelets
 numLevels = 4
-k = 2^numLevels - 1
-W = cbind(rep(1,n+1),ZDaub(0:n,numLevels=numLevels))
-mod = VBSV(y,X=NULL,W=W,hyper,options=list(homo=FALSE,smooth=TRUE),Trace=1)
+W = WDaub(0:n,numLevels=numLevels)
+mod = VBSV(y,W=W)
 
 mod$par
 sv_plot(mod,true_val=h,log=T)
