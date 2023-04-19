@@ -1,4 +1,4 @@
-# Smoothing-volatility-targeting
+# Smoothing volatility targeting
 
 This folder contains the main paper [Bernardi, Bianchi, and Bianco (2022)] and the code to perform semi-parametric variational Bayes inference for univariate stochastic volatility models with arbitrary smoothness in the approximate posterior densities.
 
